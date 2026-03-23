@@ -19,11 +19,13 @@ type EqualityProof struct {
 // ProveEquality generates a proof that ct1, ct2, ct3 all encrypt the same amount
 // under pk1, pk2, pk3 respectively. The prover supplies the amount and the
 // randomness r1, r2, r3 used to create each ciphertext.
+// If transcript is nil, a default transcript is created.
 func ProveEquality(
 	amount uint64,
 	r1, r2, r3 *fr.Element,
 	pk1, pk2, pk3 *bn254.G1Affine,
 	ct1, ct2, ct3 *Ciphertext,
+	transcript *Transcript,
 ) (EqualityProof, error) {
 	// 1. Random nonces
 	var km, kr1, kr2, kr3 fr.Element
@@ -61,13 +63,30 @@ func ProveEquality(
 	}
 
 	// 3. Build transcript and get challenge
-	e := equalityChallenge(
-		pk1, pk2, pk3,
-		ct1, ct2, ct3,
-		&r1s[0], &r2s[0],
-		&r1s[1], &r2s[1],
-		&r1s[2], &r2s[2],
-	)
+	if transcript == nil {
+		transcript = NewTranscript("x/confidential/v1")
+	}
+	transcript.AppendBytes("proof_type", []byte("equality"))
+
+	transcript.AppendPoint("pk1", pk1)
+	transcript.AppendPoint("pk2", pk2)
+	transcript.AppendPoint("pk3", pk3)
+
+	transcript.AppendPoint("ct1_C1", &ct1.C1)
+	transcript.AppendPoint("ct1_C2", &ct1.C2)
+	transcript.AppendPoint("ct2_C1", &ct2.C1)
+	transcript.AppendPoint("ct2_C2", &ct2.C2)
+	transcript.AppendPoint("ct3_C1", &ct3.C1)
+	transcript.AppendPoint("ct3_C2", &ct3.C2)
+
+	transcript.AppendPoint("R11", &r1s[0])
+	transcript.AppendPoint("R21", &r2s[0])
+	transcript.AppendPoint("R12", &r1s[1])
+	transcript.AppendPoint("R22", &r2s[1])
+	transcript.AppendPoint("R13", &r1s[2])
+	transcript.AppendPoint("R23", &r2s[2])
+
+	e := transcript.ChallengeScalar("equality_challenge")
 
 	// 4. Responses: Sm = km + e*m, Sr_i = kr_i + e*r_i
 	var mFr fr.Element
@@ -98,19 +117,38 @@ func ProveEquality(
 
 // VerifyEquality verifies that the 3 ciphertexts under 3 public keys all
 // encrypt the same amount.
+// If transcript is nil, a default transcript is created.
 func VerifyEquality(
 	proof *EqualityProof,
 	pk1, pk2, pk3 *bn254.G1Affine,
 	ct1, ct2, ct3 *Ciphertext,
+	transcript *Transcript,
 ) bool {
 	// 1. Reconstruct challenge
-	e := equalityChallenge(
-		pk1, pk2, pk3,
-		ct1, ct2, ct3,
-		&proof.R11, &proof.R21,
-		&proof.R12, &proof.R22,
-		&proof.R13, &proof.R23,
-	)
+	if transcript == nil {
+		transcript = NewTranscript("x/confidential/v1")
+	}
+	transcript.AppendBytes("proof_type", []byte("equality"))
+
+	transcript.AppendPoint("pk1", pk1)
+	transcript.AppendPoint("pk2", pk2)
+	transcript.AppendPoint("pk3", pk3)
+
+	transcript.AppendPoint("ct1_C1", &ct1.C1)
+	transcript.AppendPoint("ct1_C2", &ct1.C2)
+	transcript.AppendPoint("ct2_C1", &ct2.C1)
+	transcript.AppendPoint("ct2_C2", &ct2.C2)
+	transcript.AppendPoint("ct3_C1", &ct3.C1)
+	transcript.AppendPoint("ct3_C2", &ct3.C2)
+
+	transcript.AppendPoint("R11", &proof.R11)
+	transcript.AppendPoint("R21", &proof.R21)
+	transcript.AppendPoint("R12", &proof.R12)
+	transcript.AppendPoint("R22", &proof.R22)
+	transcript.AppendPoint("R13", &proof.R13)
+	transcript.AppendPoint("R23", &proof.R23)
+
+	e := transcript.ChallengeScalar("equality_challenge")
 	eBig := e.BigInt(new(big.Int))
 
 	smBig := proof.Sm.BigInt(new(big.Int))
@@ -177,34 +215,4 @@ func VerifyEquality(
 	}
 
 	return true
-}
-
-// equalityChallenge builds the Fiat-Shamir transcript for the equality proof.
-func equalityChallenge(
-	pk1, pk2, pk3 *bn254.G1Affine,
-	ct1, ct2, ct3 *Ciphertext,
-	r11, r21, r12, r22, r13, r23 *bn254.G1Affine,
-) fr.Element {
-	t := NewTranscript("x/confidential/v1")
-	t.AppendBytes("proof_type", []byte("equality"))
-
-	t.AppendPoint("pk1", pk1)
-	t.AppendPoint("pk2", pk2)
-	t.AppendPoint("pk3", pk3)
-
-	t.AppendPoint("ct1_C1", &ct1.C1)
-	t.AppendPoint("ct1_C2", &ct1.C2)
-	t.AppendPoint("ct2_C1", &ct2.C1)
-	t.AppendPoint("ct2_C2", &ct2.C2)
-	t.AppendPoint("ct3_C1", &ct3.C1)
-	t.AppendPoint("ct3_C2", &ct3.C2)
-
-	t.AppendPoint("R11", r11)
-	t.AppendPoint("R21", r21)
-	t.AppendPoint("R12", r12)
-	t.AppendPoint("R22", r22)
-	t.AppendPoint("R13", r13)
-	t.AppendPoint("R23", r23)
-
-	return t.ChallengeScalar("equality_challenge")
 }

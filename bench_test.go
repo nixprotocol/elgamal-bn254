@@ -98,7 +98,7 @@ func BenchmarkDLEQProve(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveDLEQ(&sk, &pk, &ct, amount)
+		_, err := ProveDLEQ(&sk, &pk, &ct, amount, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -117,14 +117,14 @@ func BenchmarkDLEQVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	proof, err := ProveDLEQ(&sk, &pk, &ct, amount)
+	proof, err := ProveDLEQ(&sk, &pk, &ct, amount, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if !VerifyDLEQ(&proof, &pk, &ct, amount) {
+		if !VerifyDLEQ(&proof, &pk, &ct, amount, nil) {
 			b.Fatal("verification failed")
 		}
 	}
@@ -160,7 +160,7 @@ func BenchmarkEqualityProve(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3)
+		_, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -195,14 +195,14 @@ func BenchmarkEqualityVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	proof, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3)
+	proof, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if !VerifyEquality(&proof, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3) {
+		if !VerifyEquality(&proof, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil) {
 			b.Fatal("verification failed")
 		}
 	}
@@ -227,7 +227,7 @@ func BenchmarkApplyPendingProve(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew)
+		_, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -251,14 +251,14 @@ func BenchmarkApplyPendingVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	proof, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew)
+	proof, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if !VerifyApplyPending(&proof, &pk, &pending, &newCt) {
+		if !VerifyApplyPending(&proof, &pk, &pending, &newCt, nil) {
 			b.Fatal("verification failed")
 		}
 	}

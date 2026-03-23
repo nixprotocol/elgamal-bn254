@@ -19,7 +19,8 @@ type DLEQProof struct {
 
 // ProveDLEQ generates a DLEQ proof that the ciphertext ct decrypts to amount
 // under the secret key sk (with corresponding public key pk).
-func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64) (DLEQProof, error) {
+// If transcript is nil, a default transcript is created.
+func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64, transcript *Transcript) (DLEQProof, error) {
 	// 1. Random nonce k
 	var k fr.Element
 	if _, err := k.SetRandom(); err != nil {
@@ -35,8 +36,23 @@ func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64
 	var r2 bn254.G1Affine
 	r2.ScalarMultiplication(&ct.C1, kBig)
 
-	// 4. Build transcript
-	e := dleqChallenge(pk, ct, amount, &r1, &r2)
+	// 4. Build transcript and get challenge
+	if transcript == nil {
+		transcript = NewTranscript("x/confidential/v1")
+	}
+	transcript.AppendBytes("proof_type", []byte("dleq"))
+	transcript.AppendPoint("pk", pk)
+	transcript.AppendPoint("C1", &ct.C1)
+	transcript.AppendPoint("C2", &ct.C2)
+
+	var amountBuf [8]byte
+	binary.LittleEndian.PutUint64(amountBuf[:], amount)
+	transcript.AppendBytes("amount", amountBuf[:])
+
+	transcript.AppendPoint("R1", &r1)
+	transcript.AppendPoint("R2", &r2)
+
+	e := transcript.ChallengeScalar("dleq_challenge")
 
 	// 5. S = k + e*sk
 	var eSk fr.Element
@@ -48,9 +64,25 @@ func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64
 }
 
 // VerifyDLEQ verifies a DLEQ proof that ct decrypts to amount under public key pk.
-func VerifyDLEQ(proof *DLEQProof, pk *bn254.G1Affine, ct *Ciphertext, amount uint64) bool {
+// If transcript is nil, a default transcript is created.
+func VerifyDLEQ(proof *DLEQProof, pk *bn254.G1Affine, ct *Ciphertext, amount uint64, transcript *Transcript) bool {
 	// 1. Reconstruct challenge
-	e := dleqChallenge(pk, ct, amount, &proof.R1, &proof.R2)
+	if transcript == nil {
+		transcript = NewTranscript("x/confidential/v1")
+	}
+	transcript.AppendBytes("proof_type", []byte("dleq"))
+	transcript.AppendPoint("pk", pk)
+	transcript.AppendPoint("C1", &ct.C1)
+	transcript.AppendPoint("C2", &ct.C2)
+
+	var amountBuf [8]byte
+	binary.LittleEndian.PutUint64(amountBuf[:], amount)
+	transcript.AppendBytes("amount", amountBuf[:])
+
+	transcript.AppendPoint("R1", &proof.R1)
+	transcript.AppendPoint("R2", &proof.R2)
+
+	e := transcript.ChallengeScalar("dleq_challenge")
 	eBig := e.BigInt(new(big.Int))
 	sBig := proof.S.BigInt(new(big.Int))
 
@@ -104,22 +136,4 @@ func VerifyDLEQ(proof *DLEQProof, pk *bn254.G1Affine, ct *Ciphertext, amount uin
 	rhs2.FromJacobian(&rhs2Jac)
 
 	return lhs2.Equal(&rhs2)
-}
-
-// dleqChallenge builds the Fiat-Shamir transcript and returns the challenge scalar.
-func dleqChallenge(pk *bn254.G1Affine, ct *Ciphertext, amount uint64, r1, r2 *bn254.G1Affine) fr.Element {
-	t := NewTranscript("x/confidential/v1")
-	t.AppendBytes("proof_type", []byte("dleq"))
-	t.AppendPoint("pk", pk)
-	t.AppendPoint("C1", &ct.C1)
-	t.AppendPoint("C2", &ct.C2)
-
-	var amountBuf [8]byte
-	binary.LittleEndian.PutUint64(amountBuf[:], amount)
-	t.AppendBytes("amount", amountBuf[:])
-
-	t.AppendPoint("R1", r1)
-	t.AppendPoint("R2", r2)
-
-	return t.ChallengeScalar("dleq_challenge")
 }

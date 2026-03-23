@@ -24,12 +24,14 @@ type ApplyPendingProof struct {
 // ProveApplyPending generates a proof that the pending ciphertext and the new
 // ciphertext encrypt the same amount. The prover knows sk (to decrypt pending)
 // and rNew (the randomness for the new ciphertext).
+// If transcript is nil, a default transcript is created.
 func ProveApplyPending(
 	sk *fr.Element,
 	pk *bn254.G1Affine,
 	pending, newCt *Ciphertext,
 	amount uint64,
 	rNew *fr.Element,
+	transcript *Transcript,
 ) (ApplyPendingProof, error) {
 	// 1. Random nonces km, ksk, krn
 	var km, ksk, krn fr.Element
@@ -78,8 +80,24 @@ func ProveApplyPending(
 	r4Jac.AddAssign(&krnPkJac)
 	r4.FromJacobian(&r4Jac)
 
-	// 6. Transcript → challenge e
-	e := applyPendingChallenge(pk, pending, newCt, &r1, &r2, &r3, &r4)
+	// 6. Transcript -> challenge e
+	if transcript == nil {
+		transcript = NewTranscript("x/confidential/v1")
+	}
+	transcript.AppendBytes("proof_type", []byte("apply_pending"))
+
+	transcript.AppendPoint("pk", pk)
+	transcript.AppendPoint("pending_C1", &pending.C1)
+	transcript.AppendPoint("pending_C2", &pending.C2)
+	transcript.AppendPoint("new_C1", &newCt.C1)
+	transcript.AppendPoint("new_C2", &newCt.C2)
+
+	transcript.AppendPoint("R1", &r1)
+	transcript.AppendPoint("R2", &r2)
+	transcript.AppendPoint("R3", &r3)
+	transcript.AppendPoint("R4", &r4)
+
+	e := transcript.ChallengeScalar("apply_pending_challenge")
 
 	// 7. Responses: Sm = km + e*m, Ssk = ksk + e*sk, Srn = krn + e*rNew
 	var mFr fr.Element
@@ -105,13 +123,31 @@ func ProveApplyPending(
 
 // VerifyApplyPending verifies that the pending and new ciphertexts encrypt the
 // same amount under the given public key.
+// If transcript is nil, a default transcript is created.
 func VerifyApplyPending(
 	proof *ApplyPendingProof,
 	pk *bn254.G1Affine,
 	pending, newCt *Ciphertext,
+	transcript *Transcript,
 ) bool {
 	// 1. Reconstruct challenge
-	e := applyPendingChallenge(pk, pending, newCt, &proof.R1, &proof.R2, &proof.R3, &proof.R4)
+	if transcript == nil {
+		transcript = NewTranscript("x/confidential/v1")
+	}
+	transcript.AppendBytes("proof_type", []byte("apply_pending"))
+
+	transcript.AppendPoint("pk", pk)
+	transcript.AppendPoint("pending_C1", &pending.C1)
+	transcript.AppendPoint("pending_C2", &pending.C2)
+	transcript.AppendPoint("new_C1", &newCt.C1)
+	transcript.AppendPoint("new_C2", &newCt.C2)
+
+	transcript.AppendPoint("R1", &proof.R1)
+	transcript.AppendPoint("R2", &proof.R2)
+	transcript.AppendPoint("R3", &proof.R3)
+	transcript.AppendPoint("R4", &proof.R4)
+
+	e := transcript.ChallengeScalar("apply_pending_challenge")
 	eBig := e.BigInt(new(big.Int))
 
 	smBig := proof.Sm.BigInt(new(big.Int))
@@ -221,27 +257,4 @@ func VerifyApplyPending(
 	}
 
 	return true
-}
-
-// applyPendingChallenge builds the Fiat-Shamir transcript for the ApplyPending proof.
-func applyPendingChallenge(
-	pk *bn254.G1Affine,
-	pending, newCt *Ciphertext,
-	r1, r2, r3, r4 *bn254.G1Affine,
-) fr.Element {
-	t := NewTranscript("x/confidential/v1")
-	t.AppendBytes("proof_type", []byte("apply_pending"))
-
-	t.AppendPoint("pk", pk)
-	t.AppendPoint("pending_C1", &pending.C1)
-	t.AppendPoint("pending_C2", &pending.C2)
-	t.AppendPoint("new_C1", &newCt.C1)
-	t.AppendPoint("new_C2", &newCt.C2)
-
-	t.AppendPoint("R1", r1)
-	t.AppendPoint("R2", r2)
-	t.AppendPoint("R3", r3)
-	t.AppendPoint("R4", r4)
-
-	return t.ChallengeScalar("apply_pending_challenge")
 }
