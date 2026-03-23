@@ -16,6 +16,10 @@ const (
 	// 4 scalars (32 bytes each) + 6 G1 points (64 bytes each) = 512 bytes.
 	EqualityProofSize = 4*32 + 6*64 // 512
 
+	// Equality2ProofSize is the byte size of a serialized Equality2Proof.
+	// 3 scalars (32 bytes each) + 4 G1 points (64 bytes each) = 352 bytes.
+	Equality2ProofSize = 3*32 + 4*64 // 352
+
 	// ApplyPendingProofSize is the byte size of a serialized ApplyPendingProof.
 	// 3 scalars (32 bytes each) + 4 G1 points (64 bytes each) = 352 bytes.
 	ApplyPendingProofSize = 3*32 + 4*64 // 352
@@ -114,6 +118,45 @@ func (p *EqualityProof) Unmarshal(data []byte) error {
 	var err error
 	points := []*bn254.G1Affine{&p.R11, &p.R21, &p.R12, &p.R22, &p.R13, &p.R23}
 	names := []string{"R11", "R21", "R12", "R22", "R13", "R23"}
+	for i, pt := range points {
+		off, err = unmarshalPoint(data, off, pt)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %w", names[i], err)
+		}
+	}
+	return nil
+}
+
+// ---------- Equality2Proof ----------
+
+// Marshal serializes the Equality2Proof as
+// Sm(32) || Sr1(32) || Sr2(32) || R11(64) || R21(64) || R12(64) || R22(64).
+func (p *Equality2Proof) Marshal() []byte {
+	buf := make([]byte, Equality2ProofSize)
+	off := 0
+	off = marshalScalar(buf, off, &p.Sm)
+	off = marshalScalar(buf, off, &p.Sr1)
+	off = marshalScalar(buf, off, &p.Sr2)
+	off = marshalPoint(buf, off, &p.R11)
+	off = marshalPoint(buf, off, &p.R21)
+	off = marshalPoint(buf, off, &p.R12)
+	marshalPoint(buf, off, &p.R22)
+	return buf
+}
+
+// Unmarshal deserializes an Equality2Proof from bytes.
+func (p *Equality2Proof) Unmarshal(data []byte) error {
+	if len(data) != Equality2ProofSize {
+		return fmt.Errorf("invalid Equality2Proof length: expected %d bytes, got %d", Equality2ProofSize, len(data))
+	}
+	off := 0
+	off = unmarshalScalar(data, off, &p.Sm)
+	off = unmarshalScalar(data, off, &p.Sr1)
+	off = unmarshalScalar(data, off, &p.Sr2)
+
+	var err error
+	points := []*bn254.G1Affine{&p.R11, &p.R21, &p.R12, &p.R22}
+	names := []string{"R11", "R21", "R12", "R22"}
 	for i, pt := range points {
 		off, err = unmarshalPoint(data, off, pt)
 		if err != nil {

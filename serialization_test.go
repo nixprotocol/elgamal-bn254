@@ -68,6 +68,36 @@ func TestEqualityProofMarshalRoundTrip(t *testing.T) {
 	require.True(t, ok, "unmarshaled equality proof must still verify")
 }
 
+func TestEquality2ProofMarshalRoundTrip(t *testing.T) {
+	_, pk1, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+	_, pk2, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+
+	amount := uint64(12345)
+
+	ct1, r1, err := Encrypt(amount, &pk1, rand.Reader)
+	require.NoError(t, err)
+	ct2, r2, err := Encrypt(amount, &pk2, rand.Reader)
+	require.NoError(t, err)
+
+	proof, err := ProveEquality2(amount, &r1, &r2, &pk1, &pk2, &ct1, &ct2, nil)
+	require.NoError(t, err)
+
+	// Marshal
+	data := proof.Marshal()
+	require.Len(t, data, Equality2ProofSize)
+
+	// Unmarshal
+	var proof2 Equality2Proof
+	err = proof2.Unmarshal(data)
+	require.NoError(t, err)
+
+	// Verify the unmarshaled proof still verifies
+	ok := VerifyEquality2(&proof2, &pk1, &pk2, &ct1, &ct2, nil)
+	require.True(t, ok, "unmarshaled 2-key equality proof must still verify")
+}
+
 func TestApplyPendingProofMarshalRoundTrip(t *testing.T) {
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
@@ -104,6 +134,10 @@ func TestDLEQProofSize(t *testing.T) {
 
 func TestEqualityProofSize(t *testing.T) {
 	require.Equal(t, 512, EqualityProofSize)
+}
+
+func TestEquality2ProofSize(t *testing.T) {
+	require.Equal(t, 352, Equality2ProofSize)
 }
 
 func TestApplyPendingProofSize(t *testing.T) {

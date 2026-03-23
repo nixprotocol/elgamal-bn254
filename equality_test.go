@@ -123,3 +123,83 @@ func TestEqualityProof_WithTranscript(t *testing.T) {
 
 	require.False(t, VerifyEquality(&proof, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, wrongT))
 }
+
+// ---------- 2-key equality proof tests ----------
+
+func TestEquality2Proof_Valid(t *testing.T) {
+	_, pk1, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+	_, pk2, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+
+	amount := uint64(12345)
+
+	ct1, r1, err := Encrypt(amount, &pk1, rand.Reader)
+	require.NoError(t, err)
+	ct2, r2, err := Encrypt(amount, &pk2, rand.Reader)
+	require.NoError(t, err)
+
+	proof, err := ProveEquality2(amount, &r1, &r2, &pk1, &pk2, &ct1, &ct2, nil)
+	require.NoError(t, err)
+
+	ok := VerifyEquality2(&proof, &pk1, &pk2, &ct1, &ct2, nil)
+	require.True(t, ok, "valid 2-key equality proof must verify")
+}
+
+func TestEquality2Proof_DifferentAmounts(t *testing.T) {
+	_, pk1, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+	_, pk2, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+
+	amount1 := uint64(12345)
+	amount2 := uint64(99999) // different
+
+	ct1, r1, err := Encrypt(amount1, &pk1, rand.Reader)
+	require.NoError(t, err)
+	ct2, r2, err := Encrypt(amount2, &pk2, rand.Reader) // wrong amount
+	require.NoError(t, err)
+
+	// Prover tries to prove equality with amount1, but ct2 encrypts amount2.
+	proof, err := ProveEquality2(amount1, &r1, &r2, &pk1, &pk2, &ct1, &ct2, nil)
+	require.NoError(t, err)
+
+	ok := VerifyEquality2(&proof, &pk1, &pk2, &ct1, &ct2, nil)
+	require.False(t, ok, "2-key equality proof with different amounts must not verify")
+}
+
+func TestEquality2Proof_WithTranscript(t *testing.T) {
+	_, pk1, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+	_, pk2, err := KeyGen(rand.Reader)
+	require.NoError(t, err)
+
+	amount := uint64(12345)
+
+	ct1, r1, err := Encrypt(amount, &pk1, rand.Reader)
+	require.NoError(t, err)
+	ct2, r2, err := Encrypt(amount, &pk2, rand.Reader)
+	require.NoError(t, err)
+
+	// Create transcript with context (simulating Cosmos module)
+	proverT := NewTranscript("x/confidential/v1")
+	proverT.AppendBytes("chain_id", []byte("nix-1"))
+	proverT.AppendBytes("sender", []byte("cosmos1abc"))
+
+	proof, err := ProveEquality2(amount, &r1, &r2, &pk1, &pk2, &ct1, &ct2, proverT)
+	require.NoError(t, err)
+
+	// Verifier must use identical transcript context
+	verifierT := NewTranscript("x/confidential/v1")
+	verifierT.AppendBytes("chain_id", []byte("nix-1"))
+	verifierT.AppendBytes("sender", []byte("cosmos1abc"))
+
+	require.True(t, VerifyEquality2(&proof, &pk1, &pk2, &ct1, &ct2, verifierT))
+
+	// Different context should fail
+	wrongT := NewTranscript("x/confidential/v1")
+	wrongT.AppendBytes("chain_id", []byte("other-chain"))
+	wrongT.AppendBytes("sender", []byte("cosmos1abc"))
+
+	require.False(t, VerifyEquality2(&proof, &pk1, &pk2, &ct1, &ct2, wrongT))
+}
