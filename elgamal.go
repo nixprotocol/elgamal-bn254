@@ -98,9 +98,10 @@ func EncryptWithRandomness(amount uint64, pk *bn254.G1Affine, r *fr.Element) (Ci
 	return ct, *r, nil
 }
 
-// Decrypt decrypts a ciphertext using the secret key and a BSGS decryption table.
-// Computes m*G = C2 - sk*C1, then solves the discrete log via BSGS.
-func Decrypt(ct *Ciphertext, sk *fr.Element, table *DecryptionTable) (uint64, error) {
+// Decrypt decrypts a ciphertext using the secret key and a discrete-log solver.
+// Computes m*G = C2 - sk*C1, then solves the discrete log via the provided Decryptor.
+// Both *DecryptionTable and *SplitDecryptionTable implement the Decryptor interface.
+func Decrypt(ct *Ciphertext, sk *fr.Element, table Decryptor) (uint64, error) {
 	if ct == nil {
 		return 0, errors.New("ciphertext is nil")
 	}
