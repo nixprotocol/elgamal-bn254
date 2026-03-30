@@ -1,0 +1,10 @@
+elgamal-bn254
+Copyright 2025 NixProtocol
+
+Website: https://nixprotocol.com
+GitHub:  https://github.com/nixprotocol
+
+ElGamal encryption over the BN254 curve with homomorphic operations and zero-knowledge proofs.
+Originally developed as part of the NixProtocol privacy infrastructure.
+
+This product includes software developed by NixProtocol.
