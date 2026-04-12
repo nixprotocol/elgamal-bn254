@@ -1,6 +1,7 @@
 package elgamal
 
 import (
+	"io"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
@@ -20,19 +21,32 @@ type EqualityProof struct {
 // under pk1, pk2, pk3 respectively. The prover supplies the amount and the
 // randomness r1, r2, r3 used to create each ciphertext.
 // If transcript is nil, a default transcript is created.
+// If rng is nil, crypto/rand.Reader is used; pass a deterministic reader
+// for KAT / test-vector generation.
 func ProveEquality(
 	amount uint64,
 	r1, r2, r3 *fr.Element,
 	pk1, pk2, pk3 *bn254.G1Affine,
 	ct1, ct2, ct3 *Ciphertext,
 	transcript *Transcript,
+	rng io.Reader,
 ) (EqualityProof, error) {
-	// 1. Random nonces
-	var km, kr1, kr2, kr3 fr.Element
-	for _, s := range []*fr.Element{&km, &kr1, &kr2, &kr3} {
-		if _, err := s.SetRandom(); err != nil {
-			return EqualityProof{}, err
-		}
+	// 1. Random nonces (from caller-supplied rng)
+	km, err := randomScalar(rng)
+	if err != nil {
+		return EqualityProof{}, err
+	}
+	kr1, err := randomScalar(rng)
+	if err != nil {
+		return EqualityProof{}, err
+	}
+	kr2, err := randomScalar(rng)
+	if err != nil {
+		return EqualityProof{}, err
+	}
+	kr3, err := randomScalar(rng)
+	if err != nil {
+		return EqualityProof{}, err
 	}
 
 	kmBig := km.BigInt(new(big.Int))
@@ -118,12 +132,34 @@ func ProveEquality(
 // VerifyEquality verifies that the 3 ciphertexts under 3 public keys all
 // encrypt the same amount.
 // If transcript is nil, a default transcript is created.
+//
+// Note: this function does NOT require pk1, pk2, pk3 to be distinct. The
+// proof is mathematically sound for any valid keys (including identical
+// ones), since it simply proves that the plaintext committed in the three
+// ciphertexts is the same. A protocol that relies on the keys representing
+// distinct parties (e.g., sender / recipient / auditor) MUST enforce
+// distinctness at its own layer — the library intentionally does not reject
+// pk1==pk2 because legitimate uses exist (auditor == sender, self-transfers,
+// etc.).
 func VerifyEquality(
 	proof *EqualityProof,
 	pk1, pk2, pk3 *bn254.G1Affine,
 	ct1, ct2, ct3 *Ciphertext,
 	transcript *Transcript,
 ) bool {
+	// 0. Validate all public keys and ciphertexts (reject identity / off-curve
+	// as defense-in-depth against degenerate-input attacks).
+	for _, pk := range []*bn254.G1Affine{pk1, pk2, pk3} {
+		if err := ValidatePublicKey(pk); err != nil {
+			return false
+		}
+	}
+	for _, c := range []*Ciphertext{ct1, ct2, ct3} {
+		if err := c.Validate(); err != nil {
+			return false
+		}
+	}
+
 	// 1. Reconstruct challenge
 	if transcript == nil {
 		transcript = NewTranscript("x/confidential/v1")
@@ -231,19 +267,28 @@ type Equality2Proof struct {
 // under pk1 and pk2 respectively. The prover supplies the amount and the
 // randomness r1, r2 used to create each ciphertext.
 // If transcript is nil, a default transcript is created.
+// If rng is nil, crypto/rand.Reader is used; pass a deterministic reader
+// for KAT / test-vector generation.
 func ProveEquality2(
 	amount uint64,
 	r1, r2 *fr.Element,
 	pk1, pk2 *bn254.G1Affine,
 	ct1, ct2 *Ciphertext,
 	transcript *Transcript,
+	rng io.Reader,
 ) (Equality2Proof, error) {
-	// 1. Random nonces
-	var km, kr1, kr2 fr.Element
-	for _, s := range []*fr.Element{&km, &kr1, &kr2} {
-		if _, err := s.SetRandom(); err != nil {
-			return Equality2Proof{}, err
-		}
+	// 1. Random nonces (from caller-supplied rng)
+	km, err := randomScalar(rng)
+	if err != nil {
+		return Equality2Proof{}, err
+	}
+	kr1, err := randomScalar(rng)
+	if err != nil {
+		return Equality2Proof{}, err
+	}
+	kr2, err := randomScalar(rng)
+	if err != nil {
+		return Equality2Proof{}, err
 	}
 
 	kmBig := km.BigInt(new(big.Int))
@@ -321,12 +366,32 @@ func ProveEquality2(
 
 // VerifyEquality2 verifies that 2 ciphertexts under 2 public keys encrypt the same amount.
 // If transcript is nil, a default transcript is created.
+//
+// Note: this function does NOT require pk1 != pk2. For the key-rotation use
+// case the caller presumably wants pk1 != pk2 (rotating to the same key is
+// pointless), but that's a protocol-layer concern. The proof is sound
+// regardless. See VerifyEquality for the full rationale.
 func VerifyEquality2(
 	proof *Equality2Proof,
 	pk1, pk2 *bn254.G1Affine,
 	ct1, ct2 *Ciphertext,
 	transcript *Transcript,
 ) bool {
+	// 0. Validate both public keys and ciphertexts. For the key-rotation use
+	// case, rejecting pk2 = identity is critical (rotating to an identity key
+	// would expose balances). Ciphertext validation blocks the C1 = identity
+	// degenerate-input attack at the verifier entry point.
+	for _, pk := range []*bn254.G1Affine{pk1, pk2} {
+		if err := ValidatePublicKey(pk); err != nil {
+			return false
+		}
+	}
+	for _, c := range []*Ciphertext{ct1, ct2} {
+		if err := c.Validate(); err != nil {
+			return false
+		}
+	}
+
 	// 1. Reconstruct challenge
 	if transcript == nil {
 		transcript = NewTranscript("x/confidential/v1")

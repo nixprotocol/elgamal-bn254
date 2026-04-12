@@ -34,19 +34,20 @@ type SplitDecryptionTable struct {
 //
 // Parameters:
 //   - splitBits: bits in the low part (typically 8 or 16; must be <= 32)
-//   - loHalfBits: kept for API compatibility (unused; lo is brute-forced)
-//   - hiHalfBits: BSGS half-bits for the hi part
+//   - hiHalfBits: BSGS half-bits for the hi part (must be <= MaxHalfBits)
 //
 // Total range: 2^splitBits * 2^(2*hiHalfBits).
 // Memory: ~2^hiHalfBits * 64 bytes for the hi baby table.
 // Worst-case decryption: O(2^splitBits * 2^hiHalfBits) iterations.
-func NewSplitDecryptionTable(splitBits, loHalfBits, hiHalfBits uint) *SplitDecryptionTable {
+//
+// Panics on out-of-range parameters.
+func NewSplitDecryptionTable(splitBits, hiHalfBits uint) *SplitDecryptionTable {
 	if splitBits > 32 {
-		panic("splitBits must be <= 32")
+		panic(fmt.Sprintf("elgamal: splitBits=%d exceeds 32", splitBits))
 	}
-	if 2*loHalfBits < splitBits {
-		panic("loHalfBits too small: 2*loHalfBits must be >= splitBits")
-	}
+	// hiHalfBits is validated inside NewDecryptionTableWithBase against
+	// MaxHalfBits; the check is centralized there for consistency with
+	// direct callers of NewDecryptionTable.
 
 	// Precompute nG = (2^splitBits) * G
 	var nG bn254.G1Affine

@@ -98,7 +98,7 @@ func BenchmarkDLEQProve(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveDLEQ(&sk, &pk, &ct, amount, nil)
+		_, err := ProveDLEQ(&sk, &pk, &ct, amount, nil, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -117,7 +117,7 @@ func BenchmarkDLEQVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	proof, err := ProveDLEQ(&sk, &pk, &ct, amount, nil)
+	proof, err := ProveDLEQ(&sk, &pk, &ct, amount, nil, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func BenchmarkEqualityProve(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil)
+		_, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -195,7 +195,7 @@ func BenchmarkEqualityVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	proof, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil)
+	proof, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func BenchmarkApplyPendingProve(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil)
+		_, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -251,7 +251,7 @@ func BenchmarkApplyPendingVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	proof, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil)
+	proof, err := ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

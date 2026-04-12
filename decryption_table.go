@@ -2,9 +2,18 @@ package elgamal
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
 )
+
+// MaxHalfBits is the upper bound on the halfBits parameter for BSGS tables.
+// Above this, `1 << halfBits` either overflows uint64 (halfBits >= 64) or
+// pre-sizes a map larger than any practical machine (halfBits >= 32:
+// billions of entries, tens of GB). 30 gives a ~1B-entry ceiling which is
+// already far past any sensible deployment; callers wanting that much range
+// should use SplitDecryptionTable instead.
+const MaxHalfBits = 30
 
 // Decryptor is the interface for discrete-log solvers used by Decrypt.
 // Both DecryptionTable (standard BSGS) and SplitDecryptionTable (hi/lo
@@ -33,7 +42,14 @@ func NewDecryptionTable(halfBits uint) *DecryptionTable {
 // Baby steps: store i*base for i in [0, 2^halfBits).
 // Giant step: -(2^halfBits)*base.
 // This is useful for SplitDecryptionTable where the hi table uses nG as its base.
+//
+// Panics if halfBits > MaxHalfBits. Above that bound, `1 << halfBits` either
+// overflows uint64 (producing a silently-empty table) or requests a map
+// allocation too large for any practical machine.
 func NewDecryptionTableWithBase(halfBits uint, base *bn254.G1Affine) *DecryptionTable {
+	if halfBits > MaxHalfBits {
+		panic(fmt.Sprintf("elgamal: halfBits=%d exceeds MaxHalfBits=%d (use SplitDecryptionTable for larger ranges)", halfBits, MaxHalfBits))
+	}
 	n := uint64(1) << halfBits // 2^halfBits
 
 	dt := &DecryptionTable{

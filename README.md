@@ -73,7 +73,7 @@ Prove that a ciphertext decrypts to a claimed amount without revealing the secre
 
 ```go
 // Prover generates proof
-proof, err := elgamal.ProveDLEQ(&sk, &pk, &ct, 1000, nil)
+proof, err := elgamal.ProveDLEQ(&sk, &pk, &ct, 1000, nil, nil)
 if err != nil {
     panic(err)
 }
@@ -98,7 +98,7 @@ ct2, r2, _ := elgamal.Encrypt(amount, &pkR, rand.Reader)
 ct3, r3, _ := elgamal.Encrypt(amount, &pkA, rand.Reader)
 
 // Prover generates proof
-proof, err := elgamal.ProveEquality(amount, &r1, &r2, &r3, &pkS, &pkR, &pkA, &ct1, &ct2, &ct3, nil)
+proof, err := elgamal.ProveEquality(amount, &r1, &r2, &r3, &pkS, &pkR, &pkA, &ct1, &ct2, &ct3, nil, nil)
 if err != nil {
     panic(err)
 }
@@ -122,7 +122,7 @@ amount := uint64(1000)
 ct1, r1, _ := elgamal.Encrypt(amount, &pkOld, rand.Reader)
 ct2, r2, _ := elgamal.Encrypt(amount, &pkNew, rand.Reader)
 
-proof, _ := elgamal.ProveEquality2(amount, &r1, &r2, &pkOld, &pkNew, &ct1, &ct2, nil)
+proof, _ := elgamal.ProveEquality2(amount, &r1, &r2, &pkOld, &pkNew, &ct1, &ct2, nil, nil)
 valid := elgamal.VerifyEquality2(&proof, &pkOld, &pkNew, &ct1, &ct2, nil)
 fmt.Println("Rotation valid:", valid) // true
 ```
@@ -142,7 +142,7 @@ amount, _ := elgamal.Decrypt(&pending, &sk, table)
 newCt, rNew, _ := elgamal.Encrypt(amount, &pk, rand.Reader)
 
 // Prove pending and newCt encrypt the same amount
-proof, _ := elgamal.ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil)
+proof, _ := elgamal.ProveApplyPending(&sk, &pk, &pending, &newCt, amount, &rNew, nil, nil)
 valid := elgamal.VerifyApplyPending(&proof, &pk, &pending, &newCt, nil)
 fmt.Println("Apply-pending valid:", valid) // true
 ```
@@ -152,8 +152,7 @@ fmt.Println("Apply-pending valid:", valid) // true
 Attach private metadata to transactions using ECDH + AES-256-GCM:
 
 ```go
-_, recipientPk, _ := elgamal.KeyGen(rand.Reader)
-recipientSk, _, _ := elgamal.KeyGen(rand.Reader)
+recipientSk, recipientPk, _ := elgamal.KeyGen(rand.Reader)
 
 // Encrypt a memo to the recipient
 memo := []byte("Payment for invoice #42")
@@ -178,7 +177,7 @@ For amounts larger than 2^32, use `SplitDecryptionTable` which decomposes values
 // Covers amounts up to ~2^48 (splitBits=8, hiHalfBits=20)
 // Memory: ~64 MB for the hi baby table
 // Worst-case decryption: ~256M iterations (~25s)
-splitTable := elgamal.NewSplitDecryptionTable(8, 4, 20)
+splitTable := elgamal.NewSplitDecryptionTable(8, 20)
 
 ct, _, _ := elgamal.Encrypt(1_000_000_000_000, &pk, rand.Reader)
 amount, err := elgamal.Decrypt(&ct, &sk, splitTable)
@@ -200,7 +199,7 @@ All types support deterministic Marshal/Unmarshal:
 
 ```go
 // Ciphertext (128 bytes)
-data, _ := ct.Marshal()
+data := ct.Marshal()
 var ct2 elgamal.Ciphertext
 ct2.Unmarshal(data)
 
@@ -255,7 +254,7 @@ proof2.Unmarshal(dleqBytes)
 |----------|-------------|
 | `NewDecryptionTable(halfBits)` | Standard BSGS, covers [0, 2^(2*halfBits)) |
 | `NewDecryptionTableWithBase(halfBits, base)` | BSGS with custom base point |
-| `NewSplitDecryptionTable(splitBits, loHalfBits, hiHalfBits)` | Hi/lo decomposition for large values |
+| `NewSplitDecryptionTable(splitBits, hiHalfBits)` | Hi/lo decomposition for large values |
 
 ### Memo
 
@@ -290,6 +289,22 @@ proof2.Unmarshal(dleqBytes)
 | Proof bytes from chain | Untrusted | `Unmarshal()` + `Verify*()` |
 | Secret keys | Trusted (your own) | Nil checks only |
 | Memo content | Trusted (your own) | Size limit (1024 bytes) |
+
+### Caller responsibilities
+
+The library enforces cryptographic soundness, but leaves certain
+protocol-level policies to the caller:
+
+- **Distinct keys in equality proofs**: `VerifyEquality` and `VerifyEquality2`
+  do not check that the public keys are pairwise distinct. The proofs are
+  sound whether keys repeat or not. Protocols that expect distinct parties
+  (e.g., sender / recipient / auditor) must enforce this themselves.
+- **Transcript context**: when proof binding to a specific transaction /
+  chain / block matters, pass a `*Transcript` with that context pre-appended
+  instead of the default `nil`.
+- **`Ciphertext.Validate()`**: the library validates ciphertexts inside
+  `Verify*` and `Unmarshal`, but if you construct a `Ciphertext` struct
+  directly from pre-deserialized state, call `Validate()` before use.
 
 ### Assumptions
 

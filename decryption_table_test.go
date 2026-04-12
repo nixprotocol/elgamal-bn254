@@ -44,3 +44,18 @@ func TestDecryptionTable_NotFound(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found")
 }
+
+// TestNewDecryptionTable_PanicOnExcessiveHalfBits pins bounds checking:
+// halfBits >= 64 silently overflows `1 << halfBits` to 0 and builds an
+// almost-empty table that then fails every DiscreteLog call. Values in
+// [32, 64) don't overflow but attempt to allocate a multi-GB map (OOM).
+// Both must be rejected at construction time with a clear panic.
+func TestNewDecryptionTable_PanicOnExcessiveHalfBits(t *testing.T) {
+	require.Panics(t, func() { NewDecryptionTable(64) }, "halfBits=64 must panic (overflow)")
+	require.Panics(t, func() { NewDecryptionTable(65) }, "halfBits=65 must panic (overflow)")
+	require.Panics(t, func() { NewDecryptionTable(40) }, "halfBits=40 must panic (OOM risk)")
+}
+
+func TestNewDecryptionTableWithBase_PanicOnExcessiveHalfBits(t *testing.T) {
+	require.Panics(t, func() { NewDecryptionTableWithBase(64, &G) })
+}

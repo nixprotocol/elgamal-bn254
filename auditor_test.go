@@ -99,7 +99,7 @@ func TestAuditorDecrypt_ConfidentialSendFlow(t *testing.T) {
 				&rSender, &rReceiver, &rAuditor,
 				&senderPk, &receiverPk, &auditorPk,
 				&senderCt, &receiverCt, &auditorCt,
-				nil,
+				nil, nil,
 			)
 			require.NoError(t, err)
 
@@ -168,12 +168,12 @@ func TestAuditorDecrypt_SplitTable_MediumValues(t *testing.T) {
 	require.NoError(t, err)
 
 	// splitBits=8, hiHalfBits=12 → covers 2^32
-	table := NewSplitDecryptionTable(8, 4, 12)
+	table := NewSplitDecryptionTable(8, 12)
 
 	amounts := []uint64{
-		1 << 24,          // 16M
-		1 << 30,          // ~1B
-		(1 << 32) - 1,    // max in range
+		1 << 24,       // 16M
+		1 << 30,       // ~1B
+		(1 << 32) - 1, // max in range
 	}
 
 	for _, amount := range amounts {
@@ -292,8 +292,7 @@ func TestAuditorDecrypt_FromSerializedCiphertext(t *testing.T) {
 	require.NoError(t, err)
 
 	// Serialize (as stored on-chain in events).
-	data, err := ct.Marshal()
-	require.NoError(t, err)
+	data := ct.Marshal()
 
 	// Deserialize (as auditor would receive from chain events).
 	var recovered Ciphertext

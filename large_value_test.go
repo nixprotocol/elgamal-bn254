@@ -128,7 +128,7 @@ func TestDLEQ_LargeValues(t *testing.T) {
 		ct, _, err := Encrypt(amount, &pk, rand.Reader)
 		require.NoError(t, err)
 
-		proof, err := ProveDLEQ(&sk, &pk, &ct, amount, nil)
+		proof, err := ProveDLEQ(&sk, &pk, &ct, amount, nil, nil)
 		require.NoError(t, err, "prove should succeed for %d", amount)
 
 		ok := VerifyDLEQ(&proof, &pk, &ct, amount, nil)
@@ -161,7 +161,7 @@ func TestEquality_LargeValues(t *testing.T) {
 	ct3, r3, err := Encrypt(amount, &pk3, rand.Reader)
 	require.NoError(t, err)
 
-	proof, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil)
+	proof, err := ProveEquality(amount, &r1, &r2, &r3, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil, nil)
 	require.NoError(t, err)
 
 	ok := VerifyEquality(&proof, &pk1, &pk2, &pk3, &ct1, &ct2, &ct3, nil)
@@ -202,8 +202,7 @@ func TestCiphertextSerialize_LargeValues(t *testing.T) {
 		ct, _, err := Encrypt(amount, &pk, rand.Reader)
 		require.NoError(t, err)
 
-		data, err := ct.Marshal()
-		require.NoError(t, err)
+		data := ct.Marshal()
 		require.Len(t, data, CiphertextSize)
 
 		var ct2 Ciphertext

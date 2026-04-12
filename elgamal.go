@@ -1,7 +1,7 @@
 package elgamal
 
 import (
-	"crypto/rand"
+	cryptorand "crypto/rand"
 	"errors"
 	"io"
 	"math/big"
@@ -9,6 +9,23 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 )
+
+// randomScalar samples a scalar uniformly from [0, q) using the provided
+// reader. If rng is nil, it falls back to crypto/rand. Uses rejection sampling
+// via crypto/rand.Int so arbitrary io.Readers (seeded for KAT, HSM-backed,
+// etc.) produce uniform scalars.
+func randomScalar(rng io.Reader) (fr.Element, error) {
+	var e fr.Element
+	if rng == nil {
+		rng = cryptorand.Reader
+	}
+	n, err := cryptorand.Int(rng, fr.Modulus())
+	if err != nil {
+		return fr.Element{}, err
+	}
+	e.SetBigInt(n)
+	return e, nil
+}
 
 // G is the BN254 G1 generator, initialized in init().
 var G bn254.G1Affine
@@ -18,15 +35,12 @@ func init() {
 	G = g1
 }
 
-// KeyGen generates a random ElGamal key pair.
+// KeyGen generates an ElGamal key pair using randomness from rng.
+// Passing nil uses crypto/rand.Reader. Any io.Reader with uniform bytes works
+// (e.g., a deterministic seed for test-vector generation).
 // Returns (secret key, public key = sk*G, error).
 func KeyGen(rng io.Reader) (fr.Element, bn254.G1Affine, error) {
-	if rng == nil {
-		rng = rand.Reader
-	}
-
-	var sk fr.Element
-	_, err := sk.SetRandom()
+	sk, err := randomScalar(rng)
 	if err != nil {
 		return fr.Element{}, bn254.G1Affine{}, err
 	}
@@ -38,7 +52,8 @@ func KeyGen(rng io.Reader) (fr.Element, bn254.G1Affine, error) {
 	return sk, pk, nil
 }
 
-// Encrypt encrypts an amount under the given public key with fresh randomness.
+// Encrypt encrypts an amount under the given public key using randomness
+// drawn from rng (pass nil for crypto/rand.Reader).
 // Returns (ciphertext, randomness r, error).
 // C1 = r*G, C2 = amount*G + r*pk.
 func Encrypt(amount uint64, pk *bn254.G1Affine, rng io.Reader) (Ciphertext, fr.Element, error) {
@@ -46,12 +61,7 @@ func Encrypt(amount uint64, pk *bn254.G1Affine, rng io.Reader) (Ciphertext, fr.E
 		return Ciphertext{}, fr.Element{}, err
 	}
 
-	if rng == nil {
-		rng = rand.Reader
-	}
-
-	var r fr.Element
-	_, err := r.SetRandom()
+	r, err := randomScalar(rng)
 	if err != nil {
 		return Ciphertext{}, fr.Element{}, err
 	}
@@ -136,7 +146,12 @@ func Decrypt(ct *Ciphertext, sk *fr.Element, table Decryptor) (uint64, error) {
 
 // Add homomorphically adds two ciphertexts.
 // Result: (C1_a + C1_b, C2_a + C2_b).
+// Panics if either argument is nil (programming error — the function
+// signature has no error return, matching the nil-check policy of Decrypt).
 func Add(a, b *Ciphertext) Ciphertext {
+	if a == nil || b == nil {
+		panic("elgamal: Add called with nil ciphertext")
+	}
 	var c1, c2 bn254.G1Affine
 	var c1Jac, c2Jac bn254.G1Jac
 	var aJac, bJac bn254.G1Jac
@@ -158,7 +173,11 @@ func Add(a, b *Ciphertext) Ciphertext {
 
 // Sub homomorphically subtracts ciphertext b from a.
 // Result: (C1_a - C1_b, C2_a - C2_b).
+// Panics if either argument is nil.
 func Sub(a, b *Ciphertext) Ciphertext {
+	if a == nil || b == nil {
+		panic("elgamal: Sub called with nil ciphertext")
+	}
 	var negB Ciphertext
 	negB.C1.Neg(&b.C1)
 	negB.C2.Neg(&b.C2)

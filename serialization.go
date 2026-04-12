@@ -38,10 +38,14 @@ func marshalPoint(buf []byte, offset int, p *bn254.G1Affine) int {
 	return offset + 64
 }
 
-// unmarshalScalar reads a scalar from data at the given offset and returns the new offset.
-func unmarshalScalar(data []byte, offset int, s *fr.Element) int {
-	s.SetBytes(data[offset : offset+32])
-	return offset + 32
+// unmarshalScalar reads a canonical 32-byte big-endian scalar from data at the
+// given offset. The scalar must be strictly less than the fr modulus; values
+// in [q, 2^256) are rejected with an error to prevent proof-byte malleability.
+func unmarshalScalar(data []byte, offset int, s *fr.Element) (int, error) {
+	if err := s.SetBytesCanonical(data[offset : offset+32]); err != nil {
+		return offset, err
+	}
+	return offset + 32, nil
 }
 
 // unmarshalPoint reads a G1 point from data at the given offset and returns the new offset and any error.
@@ -70,9 +74,12 @@ func (p *DLEQProof) Unmarshal(data []byte) error {
 		return fmt.Errorf("invalid DLEQProof length: expected %d bytes, got %d", DLEQProofSize, len(data))
 	}
 	off := 0
-	off = unmarshalScalar(data, off, &p.S)
-
 	var err error
+	off, err = unmarshalScalar(data, off, &p.S)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal S: %w", err)
+	}
+
 	off, err = unmarshalPoint(data, off, &p.R1)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal R1: %w", err)
@@ -110,12 +117,16 @@ func (p *EqualityProof) Unmarshal(data []byte) error {
 		return fmt.Errorf("invalid EqualityProof length: expected %d bytes, got %d", EqualityProofSize, len(data))
 	}
 	off := 0
-	off = unmarshalScalar(data, off, &p.Sm)
-	off = unmarshalScalar(data, off, &p.Sr1)
-	off = unmarshalScalar(data, off, &p.Sr2)
-	off = unmarshalScalar(data, off, &p.Sr3)
-
 	var err error
+	scalars := []*fr.Element{&p.Sm, &p.Sr1, &p.Sr2, &p.Sr3}
+	scalarNames := []string{"Sm", "Sr1", "Sr2", "Sr3"}
+	for i, s := range scalars {
+		off, err = unmarshalScalar(data, off, s)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %w", scalarNames[i], err)
+		}
+	}
+
 	points := []*bn254.G1Affine{&p.R11, &p.R21, &p.R12, &p.R22, &p.R13, &p.R23}
 	names := []string{"R11", "R21", "R12", "R22", "R13", "R23"}
 	for i, pt := range points {
@@ -150,11 +161,16 @@ func (p *Equality2Proof) Unmarshal(data []byte) error {
 		return fmt.Errorf("invalid Equality2Proof length: expected %d bytes, got %d", Equality2ProofSize, len(data))
 	}
 	off := 0
-	off = unmarshalScalar(data, off, &p.Sm)
-	off = unmarshalScalar(data, off, &p.Sr1)
-	off = unmarshalScalar(data, off, &p.Sr2)
-
 	var err error
+	scalars := []*fr.Element{&p.Sm, &p.Sr1, &p.Sr2}
+	scalarNames := []string{"Sm", "Sr1", "Sr2"}
+	for i, s := range scalars {
+		off, err = unmarshalScalar(data, off, s)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %w", scalarNames[i], err)
+		}
+	}
+
 	points := []*bn254.G1Affine{&p.R11, &p.R21, &p.R12, &p.R22}
 	names := []string{"R11", "R21", "R12", "R22"}
 	for i, pt := range points {
@@ -189,11 +205,16 @@ func (p *ApplyPendingProof) Unmarshal(data []byte) error {
 		return fmt.Errorf("invalid ApplyPendingProof length: expected %d bytes, got %d", ApplyPendingProofSize, len(data))
 	}
 	off := 0
-	off = unmarshalScalar(data, off, &p.Sm)
-	off = unmarshalScalar(data, off, &p.Ssk)
-	off = unmarshalScalar(data, off, &p.Srn)
-
 	var err error
+	scalars := []*fr.Element{&p.Sm, &p.Ssk, &p.Srn}
+	scalarNames := []string{"Sm", "Ssk", "Srn"}
+	for i, s := range scalars {
+		off, err = unmarshalScalar(data, off, s)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal %s: %w", scalarNames[i], err)
+		}
+	}
+
 	points := []*bn254.G1Affine{&p.R1, &p.R2, &p.R3, &p.R4}
 	names := []string{"R1", "R2", "R3", "R4"}
 	for i, pt := range points {

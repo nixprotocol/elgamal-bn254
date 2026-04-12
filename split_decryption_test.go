@@ -12,7 +12,7 @@ import (
 
 func TestSplitDecrypt_Zero(t *testing.T) {
 	// splitBits=4, hiHalfBits=4 → covers 2^12, fast table
-	table := NewSplitDecryptionTable(4, 2, 4)
+	table := NewSplitDecryptionTable(4, 4)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -27,7 +27,7 @@ func TestSplitDecrypt_Zero(t *testing.T) {
 func TestSplitDecrypt_SmallValues(t *testing.T) {
 	// splitBits=4, hiHalfBits=5 → covers 2^14 = 16384
 	// Worst case: 16 * 32 = 512 iterations per lo candidate. Fast.
-	table := NewSplitDecryptionTable(4, 2, 5)
+	table := NewSplitDecryptionTable(4, 5)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -45,7 +45,7 @@ func TestSplitDecrypt_SmallValues(t *testing.T) {
 func TestSplitDecrypt_BoundaryValues(t *testing.T) {
 	// splitBits=8, hiHalfBits=8 → covers 2^24 = 16M
 	// Worst case: 256 * 256 = 65536 iterations.
-	table := NewSplitDecryptionTable(8, 4, 8)
+	table := NewSplitDecryptionTable(8, 8)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -68,7 +68,7 @@ func TestSplitDecrypt_BoundaryValues(t *testing.T) {
 func TestSplitDecrypt_MediumValue(t *testing.T) {
 	// splitBits=8, hiHalfBits=10 → covers 2^28 = 268M
 	// Worst case: 256 * 1024 = 262144 iterations. ~0.5s.
-	table := NewSplitDecryptionTable(8, 4, 10)
+	table := NewSplitDecryptionTable(8, 10)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -82,7 +82,7 @@ func TestSplitDecrypt_LargeValue(t *testing.T) {
 	}
 	// splitBits=8, hiHalfBits=12 → covers 2^32 = 4B
 	// Worst case: 256 * 4096 = ~1M iterations. ~1s.
-	table := NewSplitDecryptionTable(8, 4, 12)
+	table := NewSplitDecryptionTable(8, 12)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -97,7 +97,7 @@ func TestSplitDecrypt_Beyond40Bit(t *testing.T) {
 	}
 	// splitBits=8, hiHalfBits=17 → covers 2^8 * 2^34 = 2^42 ≈ 4.4 trillion
 	// Worst case: 256 * 2^17 = 2^25 ≈ 33M iterations.
-	table := NewSplitDecryptionTable(8, 4, 17)
+	table := NewSplitDecryptionTable(8, 17)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -120,7 +120,7 @@ func TestSplitDecrypt_MaxUSDC(t *testing.T) {
 	// The actual BSGS iteration for the correct lo: ~2^20 giant steps worst case.
 	// With 256 lo candidates failing first: 256 * 2^20 = 2^28 ≈ 268M. ~30s.
 	// Let's use splitBits=4 to reduce lo iterations: 16 * 2^22 = 2^26 ≈ 67M. ~8s.
-	table := NewSplitDecryptionTable(4, 2, 22)
+	table := NewSplitDecryptionTable(4, 22)
 	sk, pk, err := KeyGen(rand.Reader)
 	require.NoError(t, err)
 
@@ -130,7 +130,7 @@ func TestSplitDecrypt_MaxUSDC(t *testing.T) {
 
 func TestSplitDecrypt_DiscreteLogDirect(t *testing.T) {
 	// Test DiscreteLog directly on m*G (without encryption/decryption).
-	table := NewSplitDecryptionTable(4, 2, 5)
+	table := NewSplitDecryptionTable(4, 5)
 
 	amounts := []uint64{0, 1, 15, 16, 17, 255, 1000}
 	for _, amount := range amounts {
@@ -145,7 +145,7 @@ func TestSplitDecrypt_DiscreteLogDirect(t *testing.T) {
 
 func TestSplitDecrypt_OutOfRange(t *testing.T) {
 	// splitBits=2, hiHalfBits=2 → covers 2^2 * 2^4 = 64
-	table := NewSplitDecryptionTable(2, 1, 2)
+	table := NewSplitDecryptionTable(2, 2)
 
 	// 64 is out of range (max = 63).
 	var mG bn254.G1Affine
@@ -176,7 +176,7 @@ func TestSplitDecrypt_DecryptorInterface(t *testing.T) {
 	require.Equal(t, amount, dec1)
 
 	// Split table
-	splitTable := NewSplitDecryptionTable(4, 2, 5)
+	splitTable := NewSplitDecryptionTable(4, 5)
 	dec2, err := Decrypt(&ct, &sk, splitTable)
 	require.NoError(t, err)
 	require.Equal(t, amount, dec2)
@@ -184,20 +184,22 @@ func TestSplitDecrypt_DecryptorInterface(t *testing.T) {
 
 func TestNewSplitDecryptionTable_PanicSplitBitsTooLarge(t *testing.T) {
 	require.Panics(t, func() {
-		NewSplitDecryptionTable(33, 17, 16)
+		NewSplitDecryptionTable(33, 16)
 	})
 }
 
-func TestNewSplitDecryptionTable_PanicLoHalfBitsTooSmall(t *testing.T) {
-	require.Panics(t, func() {
-		// splitBits=16, loHalfBits=7 → 2*7=14 < 16, should panic
-		NewSplitDecryptionTable(16, 7, 16)
-	})
+// TestNewSplitDecryptionTable_PanicHiHalfBitsTooLarge pins bounds checking on
+// hiHalfBits, which previously flowed unchecked into NewDecryptionTableWithBase
+// and could silently overflow (`1 << hiHalfBits == 0` for hiHalfBits >= 64)
+// or OOM (pre-sizing a multi-GB map for hiHalfBits >= 32).
+func TestNewSplitDecryptionTable_PanicHiHalfBitsTooLarge(t *testing.T) {
+	require.Panics(t, func() { NewSplitDecryptionTable(8, 64) }, "hiHalfBits=64 must panic")
+	require.Panics(t, func() { NewSplitDecryptionTable(8, 40) }, "hiHalfBits=40 must panic (OOM)")
 }
 
 func BenchmarkSplitDecrypt_8_4_8(b *testing.B) {
 	// splitBits=8, covers up to 2^24 with fast lookup
-	table := NewSplitDecryptionTable(8, 4, 8)
+	table := NewSplitDecryptionTable(8, 8)
 	sk, pk, err := KeyGen(rand.Reader)
 	if err != nil {
 		b.Fatal(err)
@@ -221,7 +223,7 @@ func BenchmarkSplitDecrypt_8_4_8(b *testing.B) {
 func BenchmarkSplitDecryptionTableInit_8_4_8(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewSplitDecryptionTable(8, 4, 8)
+		_ = NewSplitDecryptionTable(8, 8)
 	}
 }
 

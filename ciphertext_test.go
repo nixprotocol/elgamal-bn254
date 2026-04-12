@@ -27,12 +27,11 @@ func TestCiphertextMarshalRoundTrip(t *testing.T) {
 
 	ct := &Ciphertext{C1: p1, C2: p2}
 
-	data, err := ct.Marshal()
-	require.NoError(t, err)
+	data := ct.Marshal()
 	require.Len(t, data, CiphertextSize)
 
 	var ct2 Ciphertext
-	err = ct2.Unmarshal(data)
+	err := ct2.Unmarshal(data)
 	require.NoError(t, err)
 
 	require.True(t, ct.C1.Equal(&ct2.C1), "C1 mismatch after round-trip")
@@ -55,6 +54,24 @@ func TestCiphertextUnmarshalInvalid(t *testing.T) {
 	err = ct.Unmarshal(make([]byte, 256))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid ciphertext length")
+}
+
+// TestCiphertextUnmarshalRejectsIdentityC1 asserts that a ciphertext whose C1
+// component is the point at infinity is rejected. C1 = O degrades ElGamal
+// decryption to C2 regardless of sk, making the "ciphertext" a public value
+// and enabling protocol-level attacks on balance accounting.
+func TestCiphertextUnmarshalRejectsIdentityC1(t *testing.T) {
+	var validC2 bn254.G1Affine
+	validC2.ScalarMultiplication(&G, big.NewInt(5))
+
+	data := make([]byte, CiphertextSize)
+	// First 64 bytes = C1 = all zeros (identity).
+	copy(data[64:], validC2.Marshal())
+
+	var ct Ciphertext
+	err := ct.Unmarshal(data)
+	require.Error(t, err, "ciphertext with C1 = identity must be rejected")
+	require.Contains(t, err.Error(), "C1")
 }
 
 func TestValidatePublicKey(t *testing.T) {

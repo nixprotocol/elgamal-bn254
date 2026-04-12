@@ -2,6 +2,7 @@ package elgamal
 
 import (
 	"encoding/binary"
+	"io"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
@@ -20,10 +21,12 @@ type DLEQProof struct {
 // ProveDLEQ generates a DLEQ proof that the ciphertext ct decrypts to amount
 // under the secret key sk (with corresponding public key pk).
 // If transcript is nil, a default transcript is created.
-func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64, transcript *Transcript) (DLEQProof, error) {
-	// 1. Random nonce k
-	var k fr.Element
-	if _, err := k.SetRandom(); err != nil {
+// If rng is nil, crypto/rand.Reader is used; pass a deterministic reader
+// for KAT / test-vector generation.
+func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64, transcript *Transcript, rng io.Reader) (DLEQProof, error) {
+	// 1. Random nonce k (from caller-supplied rng, falling back to crypto/rand)
+	k, err := randomScalar(rng)
+	if err != nil {
 		return DLEQProof{}, err
 	}
 	kBig := k.BigInt(new(big.Int))
@@ -66,6 +69,18 @@ func ProveDLEQ(sk *fr.Element, pk *bn254.G1Affine, ct *Ciphertext, amount uint64
 // VerifyDLEQ verifies a DLEQ proof that ct decrypts to amount under public key pk.
 // If transcript is nil, a default transcript is created.
 func VerifyDLEQ(proof *DLEQProof, pk *bn254.G1Affine, ct *Ciphertext, amount uint64, transcript *Transcript) bool {
+	// 0. Reject unvalidated / identity public keys (prevents forgery attacks
+	// where pk = O makes the Schnorr equations trivially satisfiable) and
+	// reject a degenerate ciphertext (C1 = O lets the second verification
+	// equation collapse, allowing submission of a publicly-readable
+	// "ciphertext" with an honest proof).
+	if err := ValidatePublicKey(pk); err != nil {
+		return false
+	}
+	if err := ct.Validate(); err != nil {
+		return false
+	}
+
 	// 1. Reconstruct challenge
 	if transcript == nil {
 		transcript = NewTranscript("x/confidential/v1")

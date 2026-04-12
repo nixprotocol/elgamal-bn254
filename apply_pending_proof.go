@@ -1,6 +1,7 @@
 package elgamal
 
 import (
+	"io"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254"
@@ -17,7 +18,7 @@ import (
 //   - new_C1 = r_new*G                  (structure)
 //   - new_C2 = m*G + r_new*pk           (structure)
 type ApplyPendingProof struct {
-	Sm, Ssk, Srn       fr.Element
+	Sm, Ssk, Srn   fr.Element
 	R1, R2, R3, R4 bn254.G1Affine
 }
 
@@ -25,6 +26,8 @@ type ApplyPendingProof struct {
 // ciphertext encrypt the same amount. The prover knows sk (to decrypt pending)
 // and rNew (the randomness for the new ciphertext).
 // If transcript is nil, a default transcript is created.
+// If rng is nil, crypto/rand.Reader is used; pass a deterministic reader
+// for KAT / test-vector generation.
 func ProveApplyPending(
 	sk *fr.Element,
 	pk *bn254.G1Affine,
@@ -32,13 +35,20 @@ func ProveApplyPending(
 	amount uint64,
 	rNew *fr.Element,
 	transcript *Transcript,
+	rng io.Reader,
 ) (ApplyPendingProof, error) {
-	// 1. Random nonces km, ksk, krn
-	var km, ksk, krn fr.Element
-	for _, s := range []*fr.Element{&km, &ksk, &krn} {
-		if _, err := s.SetRandom(); err != nil {
-			return ApplyPendingProof{}, err
-		}
+	// 1. Random nonces km, ksk, krn (from caller-supplied rng)
+	km, err := randomScalar(rng)
+	if err != nil {
+		return ApplyPendingProof{}, err
+	}
+	ksk, err := randomScalar(rng)
+	if err != nil {
+		return ApplyPendingProof{}, err
+	}
+	krn, err := randomScalar(rng)
+	if err != nil {
+		return ApplyPendingProof{}, err
 	}
 
 	kmBig := km.BigInt(new(big.Int))
@@ -130,6 +140,17 @@ func VerifyApplyPending(
 	pending, newCt *Ciphertext,
 	transcript *Transcript,
 ) bool {
+	// 0. Reject unvalidated / identity public keys and degenerate ciphertexts.
+	if err := ValidatePublicKey(pk); err != nil {
+		return false
+	}
+	if err := pending.Validate(); err != nil {
+		return false
+	}
+	if err := newCt.Validate(); err != nil {
+		return false
+	}
+
 	// 1. Reconstruct challenge
 	if transcript == nil {
 		transcript = NewTranscript("x/confidential/v1")
