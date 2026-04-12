@@ -61,6 +61,36 @@ func (t *Transcript) AppendScalar(label string, s *fr.Element) {
 // Folding the challenge back into state is critical for multi-round proofs:
 // without it, drawing two challenges from the same state with different
 // labels produces correlated outputs that an adversary could exploit.
+//
+// Bias analysis.
+//
+// This function reduces a 256-bit Keccak256 output modulo the BN254 scalar
+// modulus q ≈ 0.756·2^254. Because q does not evenly divide 2^256, the
+// resulting distribution over [0, q) is not perfectly uniform:
+//
+//	k = floor(2^256 / q) = 5
+//	r = 2^256 mod q ≈ 0.216·2^254
+//
+// So ~r residues in [0, r) are each hit 6 times by the 2^256 possible hash
+// outputs, and the remaining ~(q − r) residues in [r, q) are each hit 5
+// times. Uniform would be 2^256/q ≈ 5.29 hits per residue.
+//
+// The statistical distance from uniform is ≈ 3.85%, but that is not the
+// quantity that matters for proof soundness. What matters is the cheating
+// prover's best strategy: pre-guess the most likely challenge. Under
+// uniform challenges, success probability is 1/q ≈ 2^(-253.98). Under this
+// biased reduction, success probability is (6/2^256) ≈ 2^(-253.42). The
+// soundness loss is therefore ~0.56 bits, reducing effective soundness
+// from ~254 bits to ~253 bits — still far above the 128-bit security
+// target (margin of ~125 bits).
+//
+// A standards-track alternative (RFC 9380 hash_to_field, Merlin) would
+// sample 48 bytes instead of 32 and reduce, dropping the bias to ~2^(-130).
+// That is intentionally not adopted here: the current construction is
+// sound for any realistic threat model and changing it would break the
+// transcript wire format without any security benefit. If a future
+// cross-implementation interop requirement forces a change, this is the
+// place to do it.
 func (t *Transcript) ChallengeScalar(label string) fr.Element {
 	// Length-prefix the challenge label for the same reason AppendBytes does.
 	var lenBuf [4]byte
