@@ -136,6 +136,9 @@ func DecryptMemo(encrypted []byte, sk *fr.Element) ([]byte, error) {
 
 	// Parse ephemeral public key
 	var ephemeralPk bn254.G1Affine
+	if err := requireUncompressedPoint(encrypted[:MemoEphemeralKeySize]); err != nil {
+		return nil, fmt.Errorf("ephemeral key: %w", err)
+	}
 	if err := ephemeralPk.Unmarshal(encrypted[:MemoEphemeralKeySize]); err != nil {
 		return nil, fmt.Errorf("ephemeral key: %w", err)
 	}

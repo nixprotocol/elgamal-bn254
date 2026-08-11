@@ -2,7 +2,11 @@ package elgamal
 
 import (
 	"crypto/rand"
+	"math/big"
 	"testing"
+
+	"github.com/consensys/gnark-crypto/ecc/bn254"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 )
 
 func BenchmarkEncrypt(b *testing.B) {
@@ -268,5 +272,116 @@ func BenchmarkDecryptionTableInit_16(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = NewDecryptionTable(16)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CommitmentEqualityProof — ties a Pedersen commitment to an ElGamal ciphertext
+// so range proofs can run over a binding commitment. Verified twice per
+// ConfidentialSend and once per Unshield, so its cost sits on the hot path.
+// ---------------------------------------------------------------------------
+
+// benchH is a stand-in for the NUMS blinding base. The bulletproofs package
+// cannot be imported here (it depends on this one), so derive an equivalent.
+func benchH(b *testing.B) bn254.G1Affine {
+	b.Helper()
+	h, err := bn254.HashToG1([]byte("elgamal-bn254/bench/H"), []byte("elgamal-bn254-bench"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	return h
+}
+
+func benchCommitmentStatement(b *testing.B) (
+	pk, H bn254.G1Affine, ct Ciphertext, commitment bn254.G1Affine, value, r, s fr.Element,
+) {
+	b.Helper()
+	_, pk, err := KeyGen(rand.Reader)
+	if err != nil {
+		b.Fatal(err)
+	}
+	H = benchH(b)
+
+	if _, err := r.SetRandom(); err != nil {
+		b.Fatal(err)
+	}
+	ct, _, err = EncryptWithRandomness(42, &pk, &r)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	if _, err := s.SetRandom(); err != nil {
+		b.Fatal(err)
+	}
+	value.SetUint64(42)
+
+	var vG, sH bn254.G1Affine
+	vG.ScalarMultiplication(&G, value.BigInt(new(big.Int)))
+	sH.ScalarMultiplication(&H, s.BigInt(new(big.Int)))
+	commitment = addAffine(&vG, &sH)
+	return
+}
+
+func BenchmarkCommitmentEqualityProve(b *testing.B) {
+	pk, H, ct, commitment, value, r, s := benchCommitmentStatement(b)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := ProveCommitmentEquality(&value, &r, &s, &pk, &H, &ct, &commitment, nil, rand.Reader); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCommitmentEqualityVerify(b *testing.B) {
+	pk, H, ct, commitment, value, r, s := benchCommitmentStatement(b)
+
+	proof, err := ProveCommitmentEquality(&value, &r, &s, &pk, &H, &ct, &commitment,
+		NewTranscript("bench"), rand.Reader)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !VerifyCommitmentEquality(&proof, &pk, &H, &ct, &commitment, NewTranscript("bench")) {
+			b.Fatal("verification failed")
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PopProof — proof of possession, verified once per RegisterKey.
+// ---------------------------------------------------------------------------
+
+func BenchmarkPossessionProve(b *testing.B) {
+	sk, pk, err := KeyGen(rand.Reader)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := ProvePossession(&sk, &pk, nil, rand.Reader); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPossessionVerify(b *testing.B) {
+	sk, pk, err := KeyGen(rand.Reader)
+	if err != nil {
+		b.Fatal(err)
+	}
+	proof, err := ProvePossession(&sk, &pk, NewTranscript("bench"), rand.Reader)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !VerifyPossession(&proof, &pk, NewTranscript("bench")) {
+			b.Fatal("verification failed")
+		}
 	}
 }

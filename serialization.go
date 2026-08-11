@@ -23,6 +23,11 @@ const (
 	// ApplyPendingProofSize is the byte size of a serialized ApplyPendingProof.
 	// 3 scalars (32 bytes each) + 4 G1 points (64 bytes each) = 352 bytes.
 	ApplyPendingProofSize = 3*32 + 4*64 // 352
+
+	// CommitmentEqualityProofSize is the byte size of a serialized
+	// CommitmentEqualityProof.
+	// 3 scalars (32 bytes each) + 3 G1 points (64 bytes each) = 288 bytes.
+	CommitmentEqualityProofSize = 3*32 + 3*64 // 288
 )
 
 // marshalScalar writes a scalar into buf at the given offset and returns the new offset.
@@ -48,8 +53,37 @@ func unmarshalScalar(data []byte, offset int, s *fr.Element) (int, error) {
 	return offset + 32, nil
 }
 
+// pointEncodingMask covers the two format bits gnark stores in the top of the
+// first byte: 0b00 uncompressed, 0b10/0b11 compressed, 0b01 compressed-infinity.
+const pointEncodingMask = 0b11 << 6
+
+// requireUncompressedPoint rejects any G1 encoding that is not the canonical
+// 64-byte uncompressed form.
+//
+// gnark reads the format from those flag bits, so a compressed encoding makes it
+// consume only the 32-byte X coordinate and derive Y — silently ignoring the
+// trailing 32 bytes. Distinct byte strings then decode to the SAME point (set
+// the flag matching Y's branch and fill the tail with anything), and flipping to
+// the other branch yields a DIFFERENT valid point from the same X.
+//
+// Everything here is a fixed-width 64-byte slot, so only the uncompressed form
+// is ever legitimate. Scalars are already pinned to canonical form via
+// SetBytesCanonical; without this, points were the remaining malleable input.
+func requireUncompressedPoint(b []byte) error {
+	if len(b) < 1 {
+		return fmt.Errorf("point encoding is empty")
+	}
+	if b[0]&pointEncodingMask != 0 {
+		return fmt.Errorf("point must use the uncompressed 64-byte encoding")
+	}
+	return nil
+}
+
 // unmarshalPoint reads a G1 point from data at the given offset and returns the new offset and any error.
 func unmarshalPoint(data []byte, offset int, p *bn254.G1Affine) (int, error) {
+	if err := requireUncompressedPoint(data[offset : offset+64]); err != nil {
+		return offset, err
+	}
 	if err := p.Unmarshal(data[offset : offset+64]); err != nil {
 		return offset, err
 	}
@@ -239,6 +273,9 @@ func UnmarshalPublicKey(data []byte) (bn254.G1Affine, error) {
 	if len(data) != PublicKeySize {
 		return pk, fmt.Errorf("public key must be %d bytes, got %d", PublicKeySize, len(data))
 	}
+	if err := requireUncompressedPoint(data); err != nil {
+		return pk, err
+	}
 	if err := pk.Unmarshal(data); err != nil {
 		return pk, err
 	}
@@ -246,4 +283,49 @@ func UnmarshalPublicKey(data []byte) (bn254.G1Affine, error) {
 		return pk, err
 	}
 	return pk, nil
+}
+
+// ---------- CommitmentEqualityProof ----------
+
+// Marshal serializes the CommitmentEqualityProof as
+// Zv(32) || Zr(32) || Zs(32) || A1(64) || A2(64) || A3(64).
+func (p *CommitmentEqualityProof) Marshal() []byte {
+	buf := make([]byte, CommitmentEqualityProofSize)
+	off := 0
+	off = marshalScalar(buf, off, &p.Zv)
+	off = marshalScalar(buf, off, &p.Zr)
+	off = marshalScalar(buf, off, &p.Zs)
+	off = marshalPoint(buf, off, &p.A1)
+	off = marshalPoint(buf, off, &p.A2)
+	marshalPoint(buf, off, &p.A3)
+	return buf
+}
+
+// Unmarshal deserializes a CommitmentEqualityProof from bytes.
+func (p *CommitmentEqualityProof) Unmarshal(data []byte) error {
+	if len(data) != CommitmentEqualityProofSize {
+		return fmt.Errorf("invalid CommitmentEqualityProof length: expected %d bytes, got %d",
+			CommitmentEqualityProofSize, len(data))
+	}
+	off := 0
+	var err error
+	if off, err = unmarshalScalar(data, off, &p.Zv); err != nil {
+		return fmt.Errorf("failed to unmarshal Zv: %w", err)
+	}
+	if off, err = unmarshalScalar(data, off, &p.Zr); err != nil {
+		return fmt.Errorf("failed to unmarshal Zr: %w", err)
+	}
+	if off, err = unmarshalScalar(data, off, &p.Zs); err != nil {
+		return fmt.Errorf("failed to unmarshal Zs: %w", err)
+	}
+	if off, err = unmarshalPoint(data, off, &p.A1); err != nil {
+		return fmt.Errorf("failed to unmarshal A1: %w", err)
+	}
+	if off, err = unmarshalPoint(data, off, &p.A2); err != nil {
+		return fmt.Errorf("failed to unmarshal A2: %w", err)
+	}
+	if _, err = unmarshalPoint(data, off, &p.A3); err != nil {
+		return fmt.Errorf("failed to unmarshal A3: %w", err)
+	}
+	return nil
 }

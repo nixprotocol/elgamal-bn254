@@ -34,10 +34,16 @@ func (ct *Ciphertext) Unmarshal(data []byte) error {
 		return fmt.Errorf("invalid ciphertext length: expected %d bytes, got %d", CiphertextSize, len(data))
 	}
 
+	if err := requireUncompressedPoint(data[:64]); err != nil {
+		return fmt.Errorf("C1: %w", err)
+	}
 	if err := ct.C1.Unmarshal(data[:64]); err != nil {
 		return fmt.Errorf("failed to unmarshal C1: %w", err)
 	}
 
+	if err := requireUncompressedPoint(data[64:]); err != nil {
+		return fmt.Errorf("C2: %w", err)
+	}
 	if err := ct.C2.Unmarshal(data[64:]); err != nil {
 		return fmt.Errorf("failed to unmarshal C2: %w", err)
 	}
