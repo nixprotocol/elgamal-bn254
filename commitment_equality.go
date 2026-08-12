@@ -12,7 +12,7 @@ import (
 // CommitmentEqualityProof proves that an ElGamal ciphertext and a Pedersen
 // commitment hide the same value.
 //
-// Why this exists
+// # Why this exists
 //
 // An ElGamal ciphertext is ct = (C1 = r*G, C2 = v*G + r*pk). It is tempting to
 // treat C2 as a Pedersen commitment to v with blinding base pk and run a range
