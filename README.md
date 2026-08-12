@@ -247,6 +247,28 @@ proof2.Unmarshal(dleqBytes)
 | `ProveEquality` / `VerifyEquality` | 3-key same-amount proof |
 | `ProveEquality2` / `VerifyEquality2` | 2-key same-amount proof (key rotation) |
 | `ProveApplyPending` / `VerifyApplyPending` | Pending absorption proof |
+| `ProveCommitmentEquality` / `VerifyCommitmentEquality` | A ciphertext and a Pedersen commitment hide the same value |
+| `ProvePossession` / `VerifyPossession` | Schnorr proof of possession of a secret key |
+
+#### Commitment equality
+
+`ProveCommitmentEquality` is what makes a range proof about an ElGamal
+ciphertext mean anything. A range proof is taken over a Pedersen commitment, so
+without a proof tying that commitment to the ciphertext, it constrains an
+unrelated value.
+
+It is tempting to skip the commitment and treat `C2 = v*G + r*pk` as one, using
+the account's own public key as the blinding base. That is unsound: the account
+knows `sk`, so it can re-open `C2` to any value and the range proof proves
+nothing. Commit under a nothing-up-my-sleeve base instead — `bulletproofs.H` is
+derived by hash-to-curve — and use this proof to bind the two together. The
+shared response across its three equations is what forces the values equal.
+
+#### Proof of possession
+
+`ProvePossession` demonstrates knowledge of the secret key for a public key,
+in 96 bytes. Registering a key without it lets an account claim a public key it
+cannot decrypt, which strands anything sent to it.
 
 ### Decryption Tables
 
