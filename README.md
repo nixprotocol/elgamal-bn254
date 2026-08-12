@@ -252,8 +252,8 @@ proof2.Unmarshal(dleqBytes)
 
 #### Commitment equality
 
-`ProveCommitmentEquality` is what makes a range proof about an ElGamal
-ciphertext mean anything. A range proof is taken over a Pedersen commitment, so
+`ProveCommitmentEquality` returns a `CommitmentEqualityProof`, and it is what
+makes a range proof about an ElGamal ciphertext mean anything. A range proof is taken over a Pedersen commitment, so
 without a proof tying that commitment to the ciphertext, it constrains an
 unrelated value.
 
@@ -266,8 +266,8 @@ shared response across its three equations is what forces the values equal.
 
 #### Proof of possession
 
-`ProvePossession` demonstrates knowledge of the secret key for a public key,
-in 96 bytes. Registering a key without it lets an account claim a public key it
+`ProvePossession` returns a `PopProof` demonstrating knowledge of the secret key
+for a public key, in 96 bytes. Registering a key without it lets an account claim a public key it
 cannot decrypt, which strands anything sent to it.
 
 ### Decryption Tables
